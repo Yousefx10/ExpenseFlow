@@ -41,6 +41,14 @@ a {
     color: #16a34a;
 }
 
+.logo .company-name{
+    font-size: small;
+
+
+    color: #888;
+    margin-top: -4px;
+    letter-spacing: 0.5px;
+}
 .nav-links {
     list-style: none;
     margin-top: 12px;
@@ -64,10 +72,13 @@ a {
 }
 
 .sidebar .user {
-    margin-top: auto;
+    margin-top: 200px;
+    margin-bottom: auto;
     font-size: 13px;
     border-top: 1px solid #e5e7eb;
     padding-top: 16px;
+
+   
 }
 
 /* Main area */

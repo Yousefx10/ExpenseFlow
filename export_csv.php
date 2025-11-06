@@ -2,11 +2,11 @@
 require 'config.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header('Location: index.php');
-    exit;
+    exit('Not authorized');
 }
 
 $userId = $_SESSION['user_id'];
+
 $currencyCode = $_SESSION['currency'] ?? 'USD';
 $symbolMap = [
     'USD' => '$',
@@ -16,62 +16,80 @@ $symbolMap = [
 ];
 $cur = $symbolMap[$currencyCode] ?? '$';
 
+
+
+
+
 $start  = $_GET['start_date'] ?? '';
 $end    = $_GET['end_date']   ?? '';
 $type   = $_GET['type']       ?? 'all';
 $method = $_GET['method']     ?? 'all';
 
-$query = "
-    SELECT t.tx_date, t.type, t.payment_method, t.amount, t.description,
-           c.name AS category_name, t.created_by, t.is_deleted
-    FROM transactions t
-    LEFT JOIN categories c ON t.category_id = c.id
-    WHERE t.user_id = :uid
-";
-$params = [':uid' => $userId];
+$sql = "SELECT 
+            t.tx_date,
+            t.type,
+            t.payment_method,
+            t.amount,
+            t.description,
+            t.created_by,
+            c.name AS category_name
+        FROM transactions t
+        LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.is_deleted = 0";
 
-if ($start && $end) {
-    $query .= " AND t.tx_date BETWEEN :start AND :end";
+$params = [];
+
+if ($tenantMode === 'isolated') {
+    $sql .= " AND t.user_id = :uid";
+    $params[':uid'] = $userId;
+}
+
+if ($start !== '') {
+    $sql .= " AND t.tx_date >= :start";
     $params[':start'] = $start;
-    $params[':end']   = $end;
+}
+
+if ($end !== '') {
+    $sql .= " AND t.tx_date <= :end";
+    $params[':end'] = $end;
 }
 
 if ($type !== 'all') {
-    $query .= " AND t.type = :type";
+    $sql .= " AND t.type = :type";
     $params[':type'] = $type;
 }
 
 if ($method !== 'all') {
-    $query .= " AND t.payment_method = :method";
-    $params[':method'] = $method;
+    $sql .= " AND t.payment_method = :pm";
+    $params[':pm'] = $method;
 }
 
-$query .= " ORDER BY t.tx_date DESC";
+$sql .= " ORDER BY t.tx_date ASC, t.id ASC";
 
-$stmt = $pdo->prepare($query);
+$stmt = $pdo->prepare($sql);
 $stmt->execute($params);
-$rows = $stmt->fetchAll();
 
-$filename = "expenseflow_export_" . date('Y-m-d_H-i-s') . ".csv";
+$filename = "transactions_" . date('Y-m-d_H-i-s') . ".csv";
+
+
+
 header('Content-Type: text/csv; charset=utf-8');
-header('Content-Disposition: attachment; filename=' . $filename);
+header('Content-Disposition: attachment; filename=' .$filename);
 
 $output = fopen('php://output', 'w');
-fputcsv($output, ['Date', 'Type', 'Payment Method', 'Amount (' . $cur . ')', 'Category', 'Description', 'Created By', 'Deleted']);
+fputcsv($output, ['Date','Type','Payment Method','Amount (' .$cur.')','Description','Created By','Category']);
 
-foreach ($rows as $r) {
+while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     fputcsv($output, [
-        $r['tx_date'],
-        ucfirst($r['type']),
-        ucfirst($r['payment_method']),
-        number_format($r['amount'], 2),
-        $r['category_name'] ?: 'No category',
-        $r['description'] ?: '',
-        $r['created_by'] ?: '',
-        $r['is_deleted'] ? 'Yes' : 'No'
+        $row['tx_date'],
+        $row['type'],
+        $row['payment_method'],
+        $row['amount'],
+        $row['description'],
+        $row['created_by'],
+        $row['category_name'],
     ]);
 }
 
 fclose($output);
 exit;
-

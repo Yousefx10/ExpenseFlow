@@ -41,6 +41,7 @@ $yearEnd   = date('Y-12-31');
 
 
 
+
 $start  = $_GET['start_date'] ?? $defaultStart;
 $end    = $_GET['end_date']   ?? $defaultEnd;
 $type   = $_GET['type']       ?? 'all';   // all, income, expense
@@ -49,9 +50,14 @@ $method = $_GET['method']     ?? 'all';   // all, cash, bank
 $sql = "SELECT t.*, c.name AS category_name
         FROM transactions t
         LEFT JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = :uid";
+        WHERE 1=1";
 
-$params = [':uid' => $userId];
+$params = [];
+
+if ($tenantMode === 'isolated') {
+    $sql .= " AND t.user_id = :uid";
+    $params[':uid'] = $userId;
+}
 
 if ($start !== '') {
     $sql .= " AND t.tx_date >= :start";
@@ -73,13 +79,12 @@ if ($method !== 'all') {
     $params[':pm'] = $method;
 }
 
-
 $sql .= " ORDER BY t.tx_date DESC, t.id DESC";
-
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
+
 
 
 $totalIncome  = 0;
@@ -110,11 +115,17 @@ $net = $totalIncome - $totalExpense;
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 <div class="layout">
     <aside class="sidebar" id="sidebar">
-        <div class="logo">Expense<span>Flow</span></div>
+        <div class="logo">
+    Expense<span>Flow</span>
+    <?php if (!empty($companyName)): ?>
+        <div class="company-name"><?= htmlspecialchars($companyName) ?></div>
+    <?php endif; ?>
+</div>
+
 <ul class="nav-links">
     <li><a href="dashboard.php">Dashboard</a></li>
-    <li><a href="report.php">Report History</a></li>
-    <li><a href="analysis.php" class="<?= basename($_SERVER['PHP_SELF'])==='analysis.php'?'active':'' ?>">Analysis</a></li>
+    <li><a href="report.php" class="active">Report History</a></li>
+    <li><a href="analysis.php">Analysis</a></li>
     <li><a href="settings.php">Settings</a></li>
 </ul>
 

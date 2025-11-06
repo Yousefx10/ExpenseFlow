@@ -68,18 +68,45 @@ if (isset($_GET['delete_category'])) {
         try {
             $pdo->beginTransaction();
 
+            if ($tenantMode === 'isolated') {
+                // Isolated mode: delete only this user's category + unlink their transactions
+                $stmt = $pdo->prepare("
+                    UPDATE transactions 
+                    SET category_id = NULL 
+                    WHERE user_id = :uid AND category_id = :cid
+                ");
+                $stmt->execute([
+                    ':uid' => $userId,
+                    ':cid' => $catId
+                ]);
 
-            $stmt = $pdo->prepare("UPDATE transactions SET category_id = NULL WHERE user_id = :uid AND category_id = :cid");
-            $stmt->execute([
-                ':uid' => $userId,
-                ':cid' => $catId
-            ]);
+                $stmt = $pdo->prepare("
+                    DELETE FROM categories 
+                    WHERE id = :cid AND user_id = :uid
+                ");
+                $stmt->execute([
+                    ':cid' => $catId,
+                    ':uid' => $userId
+                ]);
+            } else {
+                // Shared mode: category is global, affect all users
+                $stmt = $pdo->prepare("
+                    UPDATE transactions 
+                    SET category_id = NULL 
+                    WHERE category_id = :cid
+                ");
+                $stmt->execute([
+                    ':cid' => $catId
+                ]);
 
-            $stmt = $pdo->prepare("DELETE FROM categories WHERE id = :cid AND user_id = :uid");
-            $stmt->execute([
-                ':cid' => $catId,
-                ':uid' => $userId
-            ]);
+                $stmt = $pdo->prepare("
+                    DELETE FROM categories 
+                    WHERE id = :cid
+                ");
+                $stmt->execute([
+                    ':cid' => $catId
+                ]);
+            }
 
             $pdo->commit();
             $success = 'Category deleted.';
@@ -89,6 +116,7 @@ if (isset($_GET['delete_category'])) {
         }
     }
 }
+
 
 
 
@@ -131,23 +159,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hard_
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-$stmt = $pdo->prepare("SELECT id, name FROM categories WHERE user_id = :uid ORDER BY name ASC");
-$stmt->execute([':uid' => $userId]);
+if ($tenantMode === 'isolated') {
+    // Each user sees only their own categories
+    $stmt = $pdo->prepare("SELECT id, name FROM categories WHERE user_id = :uid ORDER BY name ASC");
+    $stmt->execute([':uid' => $userId]);
+} else {
+    // Shared mode: all users see all categories
+    $stmt = $pdo->prepare("SELECT id, name FROM categories ORDER BY name ASC");
+    $stmt->execute();
+}
 $categories = $stmt->fetchAll();
 
 $symbolMap = [
@@ -171,12 +191,18 @@ $symbol = $symbolMap[$currentCurrency] ?? '$';
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 <div class="layout">
     <aside class="sidebar"  id="sidebar">
-        <div class="logo">Expense<span>Flow</span></div>
+        <div class="logo">
+    Expense<span>Flow</span>
+    <?php if (!empty($companyName)): ?>
+        <div class="company-name"><?= htmlspecialchars($companyName) ?></div>
+    <?php endif; ?>
+</div>
+
 <ul class="nav-links">
     <li><a href="dashboard.php">Dashboard</a></li>
     <li><a href="report.php">Report History</a></li>
-    <li><a href="analysis.php" class="<?= basename($_SERVER['PHP_SELF'])==='analysis.php'?'active':'' ?>">Analysis</a></li>
-    <li><a href="settings.php">Settings</a></li>
+    <li><a href="analysis.php" >Analysis</a></li>
+    <li><a href="settings.php" class="active">Settings</a></li>
 </ul>
 
         <div class="user">

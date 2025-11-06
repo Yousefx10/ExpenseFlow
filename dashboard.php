@@ -24,24 +24,31 @@ $monthEnd   = date('Y-m-t');
 $weekStart  = date('Y-m-d', strtotime('monday this week'));
 $weekEnd    = date('Y-m-d', strtotime('sunday this week'));
 
-function getTotalsRange(PDO $pdo, $userId, $start, $end)
-{
+
+function getTotalsRange(PDO $pdo, $userId, $start, $end) {
+    global $tenantMode;
+
+    $where  = "WHERE is_deleted = 0 AND tx_date BETWEEN :start AND :end";
+    $params = [
+        ':start' => $start,
+        ':end'   => $end,
+    ];
+
+    if ($tenantMode === 'isolated') {
+        $where  = "WHERE user_id = :uid AND is_deleted = 0 AND tx_date BETWEEN :start AND :end";
+        $params[':uid'] = $userId;
+    }
+
     $stmt = $pdo->prepare("
         SELECT
           SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) AS total_income,
           SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS total_expense
         FROM transactions
-        WHERE user_id = :uid
-          AND is_deleted = 0
-          AND tx_date BETWEEN :start AND :end
+        $where
     ");
-    $stmt->execute([
-        ':uid'   => $userId,
-        ':start' => $start,
-        ':end'   => $end,
-    ]);
+    $stmt->execute($params);
     $row = $stmt->fetch();
-    foreach (['total_income', 'total_expense'] as $k) {
+    foreach (['total_income','total_expense'] as $k) {
         if ($row[$k] === null) {
             $row[$k] = 0;
         }
@@ -49,8 +56,18 @@ function getTotalsRange(PDO $pdo, $userId, $start, $end)
     return $row;
 }
 
-function getTotalsAll(PDO $pdo, $userId)
-{
+
+function getTotalsAll(PDO $pdo, $userId) {
+    global $tenantMode;
+
+    $where  = "WHERE is_deleted = 0";
+    $params = [];
+
+    if ($tenantMode === 'isolated') {
+        $where  = "WHERE user_id = :uid AND is_deleted = 0";
+        $params[':uid'] = $userId;
+    }
+
     $stmt = $pdo->prepare("
         SELECT
           SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) AS total_income,
@@ -64,12 +81,11 @@ function getTotalsAll(PDO $pdo, $userId)
               WHEN payment_method = 'bank' AND type = 'expense' THEN -amount
               ELSE 0 END) AS bank_balance
         FROM transactions
-        WHERE user_id = :uid
-          AND is_deleted = 0
+        $where
     ");
-    $stmt->execute([':uid' => $userId]);
+    $stmt->execute($params);
     $row = $stmt->fetch();
-    foreach (['total_income', 'total_expense', 'cash_balance', 'bank_balance'] as $k) {
+    foreach (['total_income','total_expense','cash_balance','bank_balance'] as $k) {
         if ($row[$k] === null) {
             $row[$k] = 0;
         }
@@ -83,20 +99,36 @@ $monthTotals   = getTotalsRange($pdo, $userId, $monthStart, $monthEnd);
 $overallTotals = getTotalsAll($pdo, $userId);
 $netBalance    = $overallTotals['total_income'] - $overallTotals['total_expense'];
 
-$stmt = $pdo->prepare("SELECT id, name FROM categories WHERE user_id = :uid ORDER BY name ASC");
-$stmt->execute([':uid' => $userId]);
+
+if ($tenantMode === 'isolated') {
+    $stmt = $pdo->prepare("SELECT id, name FROM categories WHERE user_id = :uid ORDER BY name ASC");
+    $stmt->execute([':uid' => $userId]);
+} else {
+    $stmt = $pdo->prepare("SELECT id, name FROM categories ORDER BY name ASC");
+    $stmt->execute();
+}
 $categories = $stmt->fetchAll();
 
-$stmt = $pdo->prepare("
+
+$sqlRecent = "
     SELECT t.*, c.name AS category_name 
     FROM transactions t
     LEFT JOIN categories c ON t.category_id = c.id
-    WHERE t.user_id = :uid
-    ORDER BY t.tx_date DESC, t.id DESC
-    LIMIT 10
-");
-$stmt->execute([':uid' => $userId]);
+";
+$paramsRecent = [];
+
+if ($tenantMode === 'isolated') {
+    $sqlRecent .= "WHERE t.user_id = :uid ";
+    $paramsRecent[':uid'] = $userId;
+}
+
+$sqlRecent .= "ORDER BY t.tx_date DESC, t.id DESC
+    LIMIT 10";
+
+$stmt = $pdo->prepare($sqlRecent);
+$stmt->execute($paramsRecent);
 $recent = $stmt->fetchAll();
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -110,7 +142,13 @@ $recent = $stmt->fetchAll();
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 <div class="layout">
     <aside class="sidebar" id="sidebar">
-        <div class="logo">Expense<span>Flow</span></div>
+        <div class="logo">
+    Expense<span>Flow</span>
+    <?php if (!empty($companyName)): ?>
+        <div class="company-name"><?= htmlspecialchars($companyName) ?></div>
+    <?php endif; ?>
+</div>
+
         <ul class="nav-links">
             <li><a href="dashboard.php" class="active">Dashboard</a></li>
             <li><a href="report.php">Report History</a></li>

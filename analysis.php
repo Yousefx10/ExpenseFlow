@@ -31,22 +31,30 @@ $yearEnd   = date('Y-12-31');
 $start  = $_GET['start_date'] ?? $monthStartQuick;
 $end    = $_GET['end_date']   ?? $monthEndQuick;
 
+
 $sql = "SELECT t.category_id, c.name AS category_name, SUM(t.amount) AS total_amount
         FROM transactions t
         LEFT JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = :uid
-          AND t.is_deleted = 0
+        WHERE t.is_deleted = 0
           AND t.type = 'expense'
-          AND t.tx_date BETWEEN :start AND :end
-        GROUP BY t.category_id, c.name
-        ORDER BY total_amount DESC";
+          AND t.tx_date BETWEEN :start AND :end";
 
-$stmt = $pdo->prepare($sql);
-$stmt->execute([
-    ':uid'   => $userId,
+$params = [
     ':start' => $start,
     ':end'   => $end,
-]);
+];
+
+if ($tenantMode === 'isolated') {
+    $sql .= " AND t.user_id = :uid";
+    $params[':uid'] = $userId;
+}
+
+$sql .= " GROUP BY t.category_id, c.name
+          ORDER BY total_amount DESC";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+
 $rows = $stmt->fetchAll();
 
 $labels = [];
@@ -72,7 +80,13 @@ $totalExpense = array_sum($values);
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 <div class="layout">
     <aside class="sidebar" id="sidebar">
-        <div class="logo">Expense<span>Flow</span></div>
+        <div class="logo">
+    Expense<span>Flow</span>
+    <?php if (!empty($companyName)): ?>
+        <div class="company-name"><?= htmlspecialchars($companyName) ?></div>
+    <?php endif; ?>
+</div>
+
         <ul class="nav-links">
             <li><a href="dashboard.php">Dashboard</a></li>
             <li><a href="report.php">Report History</a></li>
