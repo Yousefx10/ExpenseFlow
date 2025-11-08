@@ -13,14 +13,16 @@ $stmt->execute([$userId]);
 $userRow = $stmt->fetch();
 
 if ($userRow) {
-    $_SESSION['user_name']  = $userRow['name'];
-    $_SESSION['user_email'] = $userRow['email'];
-    $_SESSION['currency']   = $userRow['currency'] ?? 'USD';
+    $_SESSION['user_name']        = $userRow['name'];
+    $_SESSION['user_email']       = $userRow['email'];
+    $_SESSION['currency']         = $userRow['currency'] ?? 'USD';
+    $_SESSION['currency_display'] = $userRow['currency_display_mode'] ?? 'symbol';
 }
 
-$userName  = $_SESSION['user_name'] ?? 'User';
-$userEmail = $_SESSION['user_email'] ?? '';
-$currentCurrency = $_SESSION['currency'] ?? 'USD';
+$userName           = $_SESSION['user_name'] ?? 'User';
+$userEmail          = $_SESSION['user_email'] ?? '';
+$currentCurrency    = $_SESSION['currency'] ?? 'USD';
+$currentDisplayMode = $_SESSION['currency_display'] ?? 'symbol';
 
 $success = '';
 $error   = '';
@@ -32,13 +34,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'curre
         $currency = 'USD';
     }
 
+    $displayMode = $_POST['display_mode'] ?? $currentDisplayMode;
+    $displayMode = $displayMode === 'symbol' ? 'symbol' : 'code';
 
-    $stmt = $pdo->prepare('UPDATE users SET currency = ? WHERE id = ?');
-    $stmt->execute([$currency, $userId]);
+    $stmt = $pdo->prepare('UPDATE users SET currency = ?, currency_display_mode = ? WHERE id = ?');
+    $stmt->execute([$currency, $displayMode, $userId]);
 
     $_SESSION['currency'] = $currency;
+    $_SESSION['currency_display'] = $displayMode;
     $currentCurrency = $currency;
-    $success = 'Currency saved successfully.';
+    $currentDisplayMode = $displayMode;
+    $success = 'Currency preferences saved.';
 }
 
 
@@ -57,6 +63,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_c
         } catch (PDOException $e) {
 
             $error = 'This category already exists.';
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_bank') {
+    $bankName = trim($_POST['bank_name'] ?? '');
+    if ($bankName === '') {
+        $error = 'Bank name cannot be empty.';
+    } else {
+        try {
+            $stmt = $pdo->prepare("INSERT INTO bank_accounts (user_id, name) VALUES (:uid, :name)");
+            $stmt->execute([
+                ':uid'  => $userId,
+                ':name' => $bankName
+            ]);
+            $success = 'Bank account added.';
+        } catch (PDOException $e) {
+            $error = 'Could not add bank account.';
         }
     }
 }
@@ -81,6 +105,16 @@ if (isset($_GET['delete_category'])) {
                 ]);
 
                 $stmt = $pdo->prepare("
+                    UPDATE finance_book
+                    SET category_id = NULL
+                    WHERE user_id = :uid AND category_id = :cid
+                ");
+                $stmt->execute([
+                    ':uid' => $userId,
+                    ':cid' => $catId
+                ]);
+
+                $stmt = $pdo->prepare("
                     DELETE FROM categories 
                     WHERE id = :cid AND user_id = :uid
                 ");
@@ -93,6 +127,15 @@ if (isset($_GET['delete_category'])) {
                 $stmt = $pdo->prepare("
                     UPDATE transactions 
                     SET category_id = NULL 
+                    WHERE category_id = :cid
+                ");
+                $stmt->execute([
+                    ':cid' => $catId
+                ]);
+
+                $stmt = $pdo->prepare("
+                    UPDATE finance_book
+                    SET category_id = NULL
                     WHERE category_id = :cid
                 ");
                 $stmt->execute([
@@ -121,6 +164,74 @@ if (isset($_GET['delete_category'])) {
 
 
 
+if (isset($_GET['delete_bank'])) {
+    $bankId = (int)$_GET['delete_bank'];
+    if ($bankId > 0) {
+        try {
+            $pdo->beginTransaction();
+
+            if ($tenantMode === 'isolated') {
+                $stmt = $pdo->prepare("
+                    UPDATE transactions
+                    SET bank_id = NULL
+                    WHERE user_id = :uid AND bank_id = :bid
+                ");
+                $stmt->execute([
+                    ':uid' => $userId,
+                    ':bid' => $bankId
+                ]);
+
+                $stmt = $pdo->prepare("
+                    UPDATE finance_book
+                    SET bank_id = NULL
+                    WHERE user_id = :uid AND bank_id = :bid
+                ");
+                $stmt->execute([
+                    ':uid' => $userId,
+                    ':bid' => $bankId
+                ]);
+
+                $stmt = $pdo->prepare("
+                    DELETE FROM bank_accounts
+                    WHERE id = :bid AND user_id = :uid
+                ");
+                $stmt->execute([
+                    ':bid' => $bankId,
+                    ':uid' => $userId
+                ]);
+            } else {
+                $stmt = $pdo->prepare("
+                    UPDATE transactions
+                    SET bank_id = NULL
+                    WHERE bank_id = :bid
+                ");
+                $stmt->execute([':bid' => $bankId]);
+
+                $stmt = $pdo->prepare("
+                    UPDATE finance_book
+                    SET bank_id = NULL
+                    WHERE bank_id = :bid
+                ");
+                $stmt->execute([':bid' => $bankId]);
+
+                $stmt = $pdo->prepare("
+                    DELETE FROM bank_accounts
+                    WHERE id = :bid
+                ");
+                $stmt->execute([':bid' => $bankId]);
+            }
+
+            $pdo->commit();
+            $success = 'Bank account deleted.';
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $error = 'Could not delete bank account.';
+        }
+    }
+}
+
 
 
 
@@ -135,8 +246,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hard_
             $pdo->beginTransaction();
 
 
+
             $pdo->exec("DELETE FROM transactions");
+            $pdo->exec("DELETE FROM finance_book");
             $pdo->exec("DELETE FROM categories");
+            $pdo->exec("DELETE FROM bank_accounts");
             $pdo->exec("DELETE FROM users");
 
             $pdo->commit();
@@ -170,6 +284,15 @@ if ($tenantMode === 'isolated') {
 }
 $categories = $stmt->fetchAll();
 
+if ($tenantMode === 'isolated') {
+    $stmt = $pdo->prepare("SELECT id, name FROM bank_accounts WHERE user_id = :uid ORDER BY name ASC");
+    $stmt->execute([':uid' => $userId]);
+} else {
+    $stmt = $pdo->prepare("SELECT id, name FROM bank_accounts ORDER BY name ASC");
+    $stmt->execute();
+}
+$banks = $stmt->fetchAll();
+
 $symbolMap = [
     'USD' => '$',
     'SAR' => '﷼',
@@ -200,6 +323,7 @@ $symbol = $symbolMap[$currentCurrency] ?? '$';
 
 <ul class="nav-links">
     <li><a href="dashboard.php">Dashboard</a></li>
+    <li><a href="financebook.php">Finance Book</a></li>
     <li><a href="report.php">Report History</a></li>
     <li><a href="analysis.php" >Analysis</a></li>
     <li><a href="settings.php" class="active">Settings</a></li>
@@ -221,7 +345,7 @@ $symbol = $symbolMap[$currentCurrency] ?? '$';
             </button>
             <div>
                 <div class="page-title">Settings</div>
-                <div class="page-subtitle">Currency & Categories</div>
+                <div class="page-subtitle">Currency, Categories & Banks</div>
             </div>
         </div>
 
@@ -242,24 +366,30 @@ $symbol = $symbolMap[$currentCurrency] ?? '$';
                 <input type="hidden" name="action" value="currency">
                 <div class="form-group">
                     <label>Currency</label>
-<select name="currency">
-    <option value="USD" <?= $currentCurrency==='USD'?'selected':'' ?>>
-        USD ($) – Dollar
-    </option>
-    <option value="SAR" <?= $currentCurrency==='SAR'?'selected':'' ?>>
-        SAR (﷼) – Saudi Riyal
-    </option>
-    <option value="EGP" <?= $currentCurrency==='EGP'?'selected':'' ?>>
-        EGP (£) – Egyptian Pound
-    </option>
-    <option value="INR" <?= $currentCurrency==='INR'?'selected':'' ?>>
-        INR (₹) – Indian Rupee
-    </option>
-</select>
-
+                    <div class="radio-row currency-row">
+                        <?php foreach ($symbolMap as $code => $sym): ?>
+                            <label class="currency-option">
+                                <input type="radio" name="currency" value="<?= $code ?>" <?= $currentCurrency === $code ? 'checked' : '' ?>>
+                                <div class="radio-pill">
+                                    <div><?= htmlspecialchars($code) ?></div>
+                                    <div class="currency-sample"><?= htmlspecialchars($sym) ?></div>
+                                </div>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
                 <div class="page-subtitle" style="margin-top:8px;">
-                    Current symbol: <strong><?= htmlspecialchars($symbol) ?></strong>
+                    Current display: <strong><?= htmlspecialchars($currentCurrency) ?> (<?= htmlspecialchars($symbol) ?>)</strong>
+                </div>
+                <div class="form-group" style="margin-top:12px;">
+                    <label>Display Mode</label>
+                    <select name="display_mode">
+                        <option value="symbol" <?= $currentDisplayMode === 'symbol' ? 'selected' : '' ?>>Show Symbols ($, ﷼, £ ...)</option>
+                        <option value="code" <?= $currentDisplayMode === 'code' ? 'selected' : '' ?>>Show Codes (USD, SAR, EGP ...)</option>
+                    </select>
+                </div>
+                <div class="page-subtitle" style="margin-top:6px;">
+                    <?= $currentDisplayMode === 'symbol' ? 'Amounts show currency symbols.' : 'Amounts show currency codes (USD, EGP, SAR, ...).' ?>
                 </div>
                 <div class="form-actions" style="margin-top:16px;">
                     <button type="submit" class="btn btn-primary">Save Currency</button>
@@ -308,10 +438,51 @@ $symbol = $symbolMap[$currentCurrency] ?? '$';
             </div>
         </section>
 
+        <section class="card" style="margin-top:18px;">
+            <div class="section-title">Bank Accounts</div>
+
+            <form method="post" style="margin-top:10px;">
+                <input type="hidden" name="action" value="add_bank">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Bank Name</label>
+                        <input type="text" name="bank_name" placeholder="e.g. Corporate Bank, Payroll Account" required>
+                    </div>
+                </div>
+                <div class="form-actions" style="margin-top:12px;">
+                    <button type="submit" class="btn btn-primary">Add Bank</button>
+                </div>
+            </form>
+
+            <div class="mt-16">
+                <div class="summary-card-title" style="margin-bottom:8px;">Existing Banks</div>
+                <?php if (!$banks): ?>
+                    <div class="page-subtitle">No bank accounts yet.</div>
+                <?php else: ?>
+                    <div class="tx-list">
+                        <?php foreach ($banks as $bank): ?>
+                            <div class="tx-item">
+                                <div class="tx-main">
+                                    <strong><?= htmlspecialchars($bank['name']) ?></strong>
+                                </div>
+                                <div>
+                                    <a class="tx-actions"
+                                       href="settings.php?delete_bank=<?= $bank['id'] ?>"
+                                       onclick="return confirm('Delete this bank account? Existing records will remain but lose this bank reference.');">
+                                        Delete
+                                    </a>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </section>
+
 <section class="card card-danger" style="margin-top:18px;">
     <div class="section-title">Danger Zone</div>
     <p class="page-subtitle" style="margin-top:6px;">
-        Resetting will <strong>delete all users, transactions, categories and settings</strong>.
+        Resetting will <strong>delete all users, transactions, finance entries, banks, categories and settings</strong>.
         This action cannot be undone. You will return to the registration screen.
     </p>
 

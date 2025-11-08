@@ -16,13 +16,15 @@ $symbolMap = [
     'EGP' => '£',
     'INR' => '₹',
 ];
-$cur = $symbolMap[$currencyCode] ?? '$';
+$currencyDisplayMode = $_SESSION['currency_display'] ?? 'symbol';
+$currencySymbol = $symbolMap[$currencyCode] ?? '$';
+$currencyPrefix = $currencyDisplayMode === 'symbol' ? $currencySymbol : $currencyCode . ' ';
 
 $today      = date('Y-m-d');
 $monthStart = date('Y-m-01');
 $monthEnd   = date('Y-m-t');
-$weekStart  = date('Y-m-d', strtotime('monday this week'));
-$weekEnd    = date('Y-m-d', strtotime('sunday this week'));
+$weekStart  = date('Y-m-d', strtotime('sunday last week +1 day'));
+$weekEnd    = date('Y-m-d', strtotime('saturday this week'));
 
 
 function getTotalsRange(PDO $pdo, $userId, $start, $end) {
@@ -109,11 +111,23 @@ if ($tenantMode === 'isolated') {
 }
 $categories = $stmt->fetchAll();
 
+$bankSql = "SELECT id, name FROM bank_accounts";
+$bankParams = [];
+if ($tenantMode === 'isolated') {
+    $bankSql .= " WHERE user_id = :uid";
+    $bankParams[':uid'] = $userId;
+}
+$bankSql .= " ORDER BY name ASC";
+$stmt = $pdo->prepare($bankSql);
+$stmt->execute($bankParams);
+$banks = $stmt->fetchAll();
+
 
 $sqlRecent = "
-    SELECT t.*, c.name AS category_name 
+    SELECT t.*, c.name AS category_name, b.name AS bank_name 
     FROM transactions t
     LEFT JOIN categories c ON t.category_id = c.id
+    LEFT JOIN bank_accounts b ON t.bank_id = b.id
 ";
 $paramsRecent = [];
 
@@ -128,6 +142,9 @@ $sqlRecent .= "ORDER BY t.tx_date DESC, t.id DESC
 $stmt = $pdo->prepare($sqlRecent);
 $stmt->execute($paramsRecent);
 $recent = $stmt->fetchAll();
+
+$txError = $_SESSION['tx_error'] ?? '';
+unset($_SESSION['tx_error']);
 
 ?>
 <!DOCTYPE html>
@@ -151,6 +168,7 @@ $recent = $stmt->fetchAll();
 
         <ul class="nav-links">
             <li><a href="dashboard.php" class="active">Dashboard</a></li>
+            <li><a href="financebook.php">Finance Book</a></li>
             <li><a href="report.php">Report History</a></li>
             <li><a href="analysis.php">Analysis</a></li>
             <li><a href="settings.php">Settings</a></li>
@@ -185,13 +203,13 @@ $recent = $stmt->fetchAll();
                 <div class="card">
                     <div class="summary-card-title">Total Income</div>
                     <div class="summary-card-value summary-income">
-                        <?= $cur . number_format($todayTotals['total_income'], 2) ?>
+                        <?= $currencyPrefix . number_format($todayTotals['total_income'], 2) ?>
                     </div>
                 </div>
                 <div class="card">
                     <div class="summary-card-title">Total Expenses</div>
                     <div class="summary-card-value summary-expense">
-                        <?= $cur . number_format($todayTotals['total_expense'], 2) ?>
+                        <?= $currencyPrefix . number_format($todayTotals['total_expense'], 2) ?>
                     </div>
                 </div>
             </div>
@@ -203,13 +221,13 @@ $recent = $stmt->fetchAll();
                 <div class="card">
                     <div class="summary-card-title">Total Income (This Week)</div>
                     <div class="summary-card-value summary-income">
-                        <?= $cur . number_format($weekTotals['total_income'], 2) ?>
+                        <?= $currencyPrefix . number_format($weekTotals['total_income'], 2) ?>
                     </div>
                 </div>
                 <div class="card">
                     <div class="summary-card-title">Total Expenses (This Week)</div>
                     <div class="summary-card-value summary-expense">
-                        <?= $cur . number_format($weekTotals['total_expense'], 2) ?>
+                        <?= $currencyPrefix . number_format($weekTotals['total_expense'], 2) ?>
                     </div>
                 </div>
             </div>
@@ -221,13 +239,13 @@ $recent = $stmt->fetchAll();
                 <div class="card">
                     <div class="summary-card-title">Total Income (This Month)</div>
                     <div class="summary-card-value summary-income">
-                        <?= $cur . number_format($monthTotals['total_income'], 2) ?>
+                        <?= $currencyPrefix . number_format($monthTotals['total_income'], 2) ?>
                     </div>
                 </div>
                 <div class="card">
                     <div class="summary-card-title">Total Expenses (This Month)</div>
                     <div class="summary-card-value summary-expense">
-                        <?= $cur . number_format($monthTotals['total_expense'], 2) ?>
+                        <?= $currencyPrefix . number_format($monthTotals['total_expense'], 2) ?>
                     </div>
                 </div>
             </div>
@@ -239,19 +257,19 @@ $recent = $stmt->fetchAll();
                 <div class="card">
                     <div class="summary-card-title">Net Balance (All Time)</div>
                     <div class="summary-card-value <?= $netBalance >= 0 ? 'summary-income' : 'summary-expense' ?>">
-                        <?= $cur . number_format($netBalance, 2) ?>
+                        <?= $currencyPrefix . number_format($netBalance, 2) ?>
                     </div>
                 </div>
                 <div class="card">
                     <div class="summary-card-title">Cash Balance</div>
                     <div class="summary-card-value summary-balance">
-                        <?= $cur . number_format($overallTotals['cash_balance'], 2) ?>
+                        <?= $currencyPrefix . number_format($overallTotals['cash_balance'], 2) ?>
                     </div>
                 </div>
                 <div class="card">
                     <div class="summary-card-title">Bank Balance</div>
                     <div class="summary-card-value summary-balance">
-                        <?= $cur . number_format($overallTotals['bank_balance'], 2) ?>
+                        <?= $currencyPrefix . number_format($overallTotals['bank_balance'], 2) ?>
                     </div>
                 </div>
             </div>
@@ -259,6 +277,11 @@ $recent = $stmt->fetchAll();
 
         <section class="card" id="newTx">
             <div class="section-title">New Transaction</div>
+            <?php if (!empty($txError)): ?>
+                <div class="badge" style="background:#fee2e2;color:#b91c1c;margin-bottom:10px;">
+                    <?= htmlspecialchars($txError) ?>
+                </div>
+            <?php endif; ?>
             <form method="post" action="save_transaction.php">
                 <input type="hidden" name="id" value="">
                 <div class="form-grid">
@@ -283,18 +306,31 @@ $recent = $stmt->fetchAll();
                         <label>Amount</label>
                         <input type="number" step="0.01" name="amount" required>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" data-payment-choice>
                         <label>Payment Method</label>
                         <div class="radio-row">
                             <label>
-                                <input type="radio" name="payment_method" value="cash" checked>
+                                <input type="radio" name="payment_method" value="cash" checked data-payment-option>
                                 <div class="radio-pill cash">Cash</div>
                             </label>
                             <label>
-                                <input type="radio" name="payment_method" value="bank">
+                                <input type="radio" name="payment_method" value="bank" data-payment-option>
                                 <div class="radio-pill bank">Bank</div>
                             </label>
                         </div>
+                    </div>
+                    <div class="form-group bank-select" data-bank-select data-linked-payment="payment_method">
+                        <label>Bank Account</label>
+                        <?php if ($banks): ?>
+                            <select name="bank_id">
+                                <option value="">Select bank</option>
+                                <?php foreach ($banks as $bank): ?>
+                                    <option value="<?= $bank['id'] ?>"><?= htmlspecialchars($bank['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php else: ?>
+                            <div class="page-subtitle">No banks configured. Add one under Settings.</div>
+                        <?php endif; ?>
                     </div>
                     <div class="form-group">
                         <label>Category</label>
@@ -344,6 +380,9 @@ $recent = $stmt->fetchAll();
                                     <?= htmlspecialchars(date('M j, Y', strtotime($tx['tx_date']))) ?>
                                     • <?= ucfirst($tx['payment_method']) ?>
                                     • <?= ucfirst($tx['type']) ?>
+                                    <?php if ($tx['payment_method'] === 'bank'): ?>
+                                        • Bank: <?= htmlspecialchars($tx['bank_name'] ?? 'N/A') ?>
+                                    <?php endif; ?>
                                     <?php if (!empty($tx['category_name'])): ?>
                                         • <?= htmlspecialchars($tx['category_name']) ?>
                                     <?php endif; ?>
@@ -359,7 +398,7 @@ $recent = $stmt->fetchAll();
                                 <span class="tx-amount 
                                     <?= $isDeleted ? 'deleted' : ($tx['type'] === 'income' ? 'income' : 'expense') ?>">
                                     <?= $tx['type'] === 'income' ? '+' : '-' ?>
-                                    <?= $cur . number_format($tx['amount'], 2) ?>
+                                    <?= $currencyPrefix . number_format($tx['amount'], 2) ?>
                                 </span>
                             </div>
                         </div>
@@ -372,4 +411,3 @@ $recent = $stmt->fetchAll();
 <script src="assets/app.js"></script>
 </body>
 </html>
-

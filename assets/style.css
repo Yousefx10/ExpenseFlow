@@ -302,6 +302,32 @@ a {
 .radio-pill.expense { border-color: red; background: #fef2f2; }
 .radio-pill.cash { border-color: darkcyan; background: #eff6ff; }
 .radio-pill.bank { border-color: palevioletred; background: #f5f3ff; }
+.currency-row {
+    flex-wrap: wrap;
+}
+
+.currency-option {
+    flex: 1 1 120px;
+    min-width: 120px;
+}
+
+.currency-option input[type="radio"] + .radio-pill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.currency-option input[type="radio"]:checked + .radio-pill {
+    border-width: 2px;
+    border-color: #22c55e;
+}
+
+.currency-sample {
+    font-size: 18px;
+    color: #0ea5e9;
+}
+
 
 input[type="radio"] { display: none; }
 
@@ -315,6 +341,196 @@ input[type="radio"]:checked + .radio-pill {
     display: flex;
     gap: 8px;
     justify-content: flex-end;
+}
+
+.table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    margin-top: 12px;
+}
+
+.finance-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    min-width: 640px;
+}
+
+.finance-table thead th {
+    text-align: left;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 10px 12px;
+}
+
+.finance-table tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #111827;
+}
+
+.finance-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.text-success {
+    color: #16a34a;
+    font-weight: 600;
+}
+
+.text-danger {
+    color: #dc2626;
+    font-weight: 600;
+}
+
+.finance-row {
+    cursor: pointer;
+}
+
+.finance-row:hover {
+    background: #eef2ff;
+}
+
+.finance-row.finance-row-deleted {
+    opacity: 0.55;
+}
+
+.finance-row.finance-row-deleted td {
+    color: #94a3b8;
+}
+
+.report-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.report-tab {
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid #e5e7eb;
+    font-size: 13px;
+    color: #4b5563;
+    background: #ffffff;
+    transition: all 0.2s ease;
+}
+
+.report-tab:hover {
+    border-color: #16a34a;
+    color: #111827;
+}
+
+.report-tab.active {
+    background: linear-gradient(to right, #22c55e, #0ea5e9);
+    color: #ffffff;
+    border-color: transparent;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 90;
+}
+
+.modal-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 95;
+}
+
+.modal.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal-card {
+    width: min(500px, 100%);
+    background: #ffffff;
+    border-radius: 18px;
+    box-shadow: 0 25px 60px rgba(15, 23, 42, 0.18);
+    padding: 20px 24px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.modal-title {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.modal-subtitle {
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.modal-close {
+    border: none;
+    background: transparent;
+    font-size: 24px;
+    cursor: pointer;
+    line-height: 1;
+    color: #6b7280;
+}
+
+.modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.modal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.field-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+}
+
+.field-value {
+    font-size: 15px;
+    color: #0f172a;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 16px;
 }
 
 /* Login */
@@ -425,13 +641,22 @@ input[type="radio"]:checked + .radio-pill {
 .chart-wrap {
     position: relative;
     width: 100%;
-    max-width: 480px;   
-    margin: 12px auto 0; 
+    max-width: 480px;
+    margin: 12px auto 0;
 }
 
 .chart-wrap canvas {
     width: 100% !important;
     height: auto !important;  
+}
+
+.chart-wrap.chart-wrap-wide {
+    max-width: 100%;
+    height: 360px;
+}
+
+.chart-wrap.chart-wrap-wide canvas {
+    height: 100% !important;
 }
 
 
@@ -440,6 +665,32 @@ input[type="radio"]:checked + .radio-pill {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 8px 12px;
     margin-top: 12px;
+}
+
+.toggle-group {
+    display: inline-flex;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.toggle-btn {
+    border: none;
+    background: transparent;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    color: #475569;
+}
+
+.toggle-btn.active {
+    background: linear-gradient(to right, #22c55e, #0ea5e9);
+    color: #fff;
+}
+
+.btn.btn-danger {
+    background: #dc2626;
+    border-color: #dc2626;
 }
 
 .legend-item {

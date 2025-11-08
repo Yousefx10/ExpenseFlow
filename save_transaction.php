@@ -37,11 +37,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    $bankId = null;
+    if ($payment === 'bank') {
+        $bankInput = $_POST['bank_id'] ?? '';
+        if ($bankInput !== '') {
+            $bankId = (int)$bankInput;
+            if ($tenantMode === 'isolated') {
+                $stmt = $pdo->prepare("SELECT id FROM bank_accounts WHERE id = :bid AND user_id = :uid");
+                $stmt->execute([
+                    ':bid' => $bankId,
+                    ':uid' => $userId
+                ]);
+            } else {
+                $stmt = $pdo->prepare("SELECT id FROM bank_accounts WHERE id = :bid");
+                $stmt->execute([':bid' => $bankId]);
+            }
+            if (!$stmt->fetch()) {
+                $bankId = null;
+            }
+        }
+        if ($bankId === null) {
+            $_SESSION['tx_error'] = 'Please select a bank account for bank payments.';
+            header('Location: dashboard.php');
+            exit;
+        }
+    }
+
     $stmt = $pdo->prepare("
         INSERT INTO transactions 
-            (user_id, tx_date, type, payment_method, amount, description, created_by, category_id)
+            (user_id, tx_date, type, payment_method, amount, description, created_by, category_id, bank_id)
         VALUES 
-            (:uid, :dt, :type, :pm, :amt, :descr, :cb, :cat)
+            (:uid, :dt, :type, :pm, :amt, :descr, :cb, :cat, :bank)
     ");
     $stmt->execute([
         ':uid'   => $userId,
@@ -52,6 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ':descr' => $desc,
         ':cb'    => $userName,
         ':cat'   => $categoryId,
+        ':bank'  => $bankId,
     ]);
 }
 
